@@ -1,0 +1,5 @@
+List,Label,Link,Logic,"Form ID 38, Field 844","Form ID 38, Field 845","Form ID 38, Field 1007","Form ID 38, Field 1008","Form ID 38, Field 1009","Form ID 38, Field 1010","Form ID 38, Field 1011","Form ID 38, Field 1012","Form ID 38, Field 1013","Form ID 38, Field 1014"
+Eligible,IRS Audit Monitoring,,AND,Yes,,,,,Yes,,,,
+Eligible ,IRS Audit Monitoring,,AND,Yes,,1065,No,,Yes,,,,
+Eligible ,IRS Audit Monitoring,,AND,Yes,,1065,Yes,Yes,Yes,,,,
+Not Eligible,IRS Audit Monitoring,,OR,No,,,,No,No,,,,
