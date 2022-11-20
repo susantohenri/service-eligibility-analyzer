@@ -32,6 +32,7 @@ add_action('admin_menu', function () {
             if ($_FILES[SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_SUBMIT]['tmp_name']) {
                 move_uploaded_file($_FILES[SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_SUBMIT]['tmp_name'], SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE);
                 update_option(SERVICE_ELIGIBILITY_ANALYZER_LATEST_CSV_OPTION, $_FILES[SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_SUBMIT]['name']);
+                service_eligibility_analyzer_analyse();
             }
         }
 ?>
@@ -78,3 +79,86 @@ add_action('admin_menu', function () {
 <?php
     }, '');
 });
+
+function service_eligibility_analyzer_analyse()
+{
+    if (!file_exists(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE)) return true;
+    $rows = [];
+    if (($open = fopen(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE, 'r')) !== FALSE) {
+        while (($data = fgetcsv($open, 100000, ",")) !== FALSE) $rows[] = $data;
+        fclose($open);
+    }
+
+    $thead = $rows[0];
+    unset($rows[0]);
+    $tbody = array_values($rows);
+
+    $list_col_num = array_search('List', $thead);
+    $label_col_num = array_search('Label', $thead);
+    $link_col_num = array_search('Link', $thead);
+    $logic_col_num = array_search('Logic', $thead);
+    $forms_and_fields = [];
+    $fields_to_analyse= [];
+    $answers_to_analyse = [];
+    $formulas = [];
+
+    $form_field_col_num = $logic_col_num;
+    while (isset($thead[$form_field_col_num + 1])) {
+        $form_field_col_num++;
+        $cell_value = $thead[$form_field_col_num];
+        $cell_value = explode(',', $cell_value);
+        $forms_and_fields[] = [
+            'col_num' => $form_field_col_num,
+            'form_id' => (int) str_replace('Form ID ', '', $cell_value[0]),
+            'field_id' => (int) str_replace('Field ', '', $cell_value[1])
+        ];
+    }
+
+    $fields_to_analyse = array_map(function ($form_and_field) {
+        return $form_and_field['field_id'];
+    }, $forms_and_fields);
+    $fields_to_analyse = implode(', ', $fields_to_analyse);
+
+    global $wpdb;
+    $collect_answers = $wpdb->prepare("
+        SELECT
+            {$wpdb->prefix}frm_items.user_id
+            , {$wpdb->prefix}frm_items.form_id
+            , {$wpdb->prefix}frm_item_metas.field_id
+            , {$wpdb->prefix}frm_item_metas.meta_value answer
+        FROM {$wpdb->prefix}frm_item_metas
+        LEFT JOIN {$wpdb->prefix}frm_items ON {$wpdb->prefix}frm_items.id = {$wpdb->prefix}frm_item_metas.item_id
+        WHERE %d
+        AND {$wpdb->prefix}frm_item_metas.field_id IN ($fields_to_analyse)
+    ", TRUE);
+    $answers = $wpdb->get_results($collect_answers);
+
+    foreach ($tbody as $row_num => $row) {
+        $is_eligible = $row[$list_col_num];
+        $service_name = $row[$label_col_num];
+        $service_link = $row[$link_col_num];
+        $logic = $row[$logic_col_num];
+        $formula = [];
+
+        foreach ($forms_and_fields as $cell) {
+            if (0 === strlen($row[$cell['col_num']])) continue;
+            $formula[] = [
+                'rule_col' => $cell['col_num'] + 1,
+                'form_id' => $cell['form_id'],
+                'field_id' => $cell['field_id'],
+                'expected_value' => $row[$cell['col_num']]
+            ];
+        }
+
+        $formulas[] = [
+            'rule_row' => $row_num + 2,
+            'service_name' => $service_name,
+            'service_link' => $service_link,
+            'is_eligible' => $is_eligible,
+            'logic' => $logic,
+            'formula' => $formula,
+        ];
+    }
+
+    // echo json_encode($formulas) . '<br>';
+}
