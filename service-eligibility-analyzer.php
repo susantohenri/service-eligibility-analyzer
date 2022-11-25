@@ -25,6 +25,13 @@ define('SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_ACTIVE', plugin_dir_url(__FILE__) 
 define('SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE', plugin_dir_path(__FILE__) . 'service-eligibility-analyzer-formula-active.csv');
 define('SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_SUBMIT', 'service-eligibility-analyzer-formula-submit');
 define('SERVICE_ELIGIBILITY_ANALYZER_LATEST_CSV_OPTION', 'service-eligibility-analyzer-last-uploaded-csv');
+define('SERVICE_ELIGIBILITY_ANALYZER_USER_META', 'service-eligibility-analyzer-eligibility-list');
+
+add_shortcode('service-eligibility-analyzer', function ($atts) {
+    $atts = shortcode_atts(['user_id' => get_current_user_id()], $atts);
+    $eligibility_list = get_user_meta((int) $atts['user_id'], SERVICE_ELIGIBILITY_ANALYZER_USER_META);
+    return $eligibility_list;
+});
 
 add_action('admin_menu', function () {
     add_menu_page('Service Eligibility Analyzer', 'Service Eligibility Analyzer', 'administrator', __FILE__, function () {
@@ -98,8 +105,9 @@ function service_eligibility_analyzer_analyse()
     $link_col_num = array_search('Link', $thead);
     $logic_col_num = array_search('Logic', $thead);
     $forms_and_fields = [];
-    $fields_to_analyse= [];
+    $fields_to_analyse = [];
     $answers_to_analyse = [];
+    $user_answers = [];
     $formulas = [];
 
     $form_field_col_num = $logic_col_num;
@@ -131,7 +139,15 @@ function service_eligibility_analyzer_analyse()
         WHERE %d
         AND {$wpdb->prefix}frm_item_metas.field_id IN ($fields_to_analyse)
     ", TRUE);
-    $answers = $wpdb->get_results($collect_answers);
+    $answers_to_analyse = $wpdb->get_results($collect_answers, ARRAY_A);
+
+    foreach ($answers_to_analyse as $answer) {
+        if (!isset($user_answers[$answer['user_id']])) $user_answers[$answer['user_id']] = [];
+        $user_answers[$answer['user_id']][] = [
+            'field_id' => $answer['field_id'],
+            'answer' => $answer['answer']
+        ];
+    }
 
     foreach ($tbody as $row_num => $row) {
         $is_eligible = $row[$list_col_num];
@@ -160,5 +176,24 @@ function service_eligibility_analyzer_analyse()
         ];
     }
 
-    // echo json_encode($formulas) . '<br>';
+    foreach ($user_answers as $user_id => $answers) {
+        $list = [
+            'eligible' => [],
+            'not-eligible' => []
+        ];
+        foreach ($formulas as $formula) {
+            $matches = [];
+            foreach ($formula['formula'] as $frml) {
+                $match = array_filter($answers, function ($answer) use ($frml) {
+                    return $answer['field_id'] == $frml['field_id'] && $answer['answer'] == $frml['expected_value'];
+                });
+                if (isset($match[0])) $matches[] = $match[0];
+            }
+            echo json_encode([$formula, $matches, count($formula['formula']), count($matches)]) . '<br><br>';
+        }
+        update_user_meta((int)$user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META, json_encode($list));
+    }
+
+    // echo json_encode($user_answers) . '<br><br>';
+    // foreach ($user_answers as $user_id => $answers) echo json_encode([$user_id, $answers]) . '<br>';
 }
