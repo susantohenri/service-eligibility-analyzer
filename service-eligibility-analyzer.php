@@ -28,9 +28,23 @@ define('SERVICE_ELIGIBILITY_ANALYZER_LATEST_CSV_OPTION', 'service-eligibility-an
 define('SERVICE_ELIGIBILITY_ANALYZER_USER_META', 'service-eligibility-analyzer-eligibility-list');
 
 add_shortcode('service-eligibility-analyzer', function ($atts) {
-    $atts = shortcode_atts(['user_id' => get_current_user_id()], $atts);
-    $eligibility_list = get_user_meta((int) $atts['user_id'], SERVICE_ELIGIBILITY_ANALYZER_USER_META);
-    return $eligibility_list;
+    $atts = shortcode_atts(['user-id' => get_current_user_id()], $atts);
+    $user_meta = service_eligibility_analyzer_user_meta ($atts['user-id'], null);
+
+    $result = 'Eligible:';
+    $eligible = array_map(function ($service) {
+        return "<li><a href='{$service->link}'>{$service->name}</a></li>";
+    }, $user_meta->eligible);
+    $eligible = implode('', $eligible);
+    $result .= "<ul>{$eligible}</ul>";
+    $result .= '<p>Not Eligible:</p>';
+    $not_eligible = array_map(function ($service) {
+        return "<li><a href='{$service->link}'>{$service->name}</a></li>";
+    }, $user_meta->not_eligible);
+    $not_eligible = implode('', $not_eligible);
+    $result .= "<ul>{$not_eligible}</ul>";
+
+    return $result;
 });
 
 add_action('admin_menu', function () {
@@ -105,11 +119,9 @@ function service_eligibility_analyzer_analyse()
     $link_col_num = array_search('Link', $thead);
     $logic_col_num = array_search('Logic', $thead);
     $forms_and_fields = [];
-    $fields_to_analyse = [];
-    $answers_to_analyse = [];
-    $user_answers = [];
     $formulas = [];
 
+    // scan header
     $form_field_col_num = $logic_col_num;
     while (isset($thead[$form_field_col_num + 1])) {
         $form_field_col_num++;
@@ -122,33 +134,7 @@ function service_eligibility_analyzer_analyse()
         ];
     }
 
-    $fields_to_analyse = array_map(function ($form_and_field) {
-        return $form_and_field['field_id'];
-    }, $forms_and_fields);
-    $fields_to_analyse = implode(', ', $fields_to_analyse);
-
-    global $wpdb;
-    $collect_answers = $wpdb->prepare("
-        SELECT
-            {$wpdb->prefix}frm_items.user_id
-            , {$wpdb->prefix}frm_items.form_id
-            , {$wpdb->prefix}frm_item_metas.field_id
-            , {$wpdb->prefix}frm_item_metas.meta_value answer
-        FROM {$wpdb->prefix}frm_item_metas
-        LEFT JOIN {$wpdb->prefix}frm_items ON {$wpdb->prefix}frm_items.id = {$wpdb->prefix}frm_item_metas.item_id
-        WHERE %d
-        AND {$wpdb->prefix}frm_item_metas.field_id IN ($fields_to_analyse)
-    ", TRUE);
-    $answers_to_analyse = $wpdb->get_results($collect_answers, ARRAY_A);
-
-    foreach ($answers_to_analyse as $answer) {
-        if (!isset($user_answers[$answer['user_id']])) $user_answers[$answer['user_id']] = [];
-        $user_answers[$answer['user_id']][] = [
-            'field_id' => $answer['field_id'],
-            'answer' => $answer['answer']
-        ];
-    }
-
+    // scan body
     foreach ($tbody as $row_num => $row) {
         $is_eligible = $row[$list_col_num];
         $service_name = $row[$label_col_num];
@@ -176,24 +162,56 @@ function service_eligibility_analyzer_analyse()
         ];
     }
 
-    foreach ($user_answers as $user_id => $answers) {
-        $list = [
-            'eligible' => [],
-            'not-eligible' => []
-        ];
-        foreach ($formulas as $formula) {
-            $matches = [];
-            foreach ($formula['formula'] as $frml) {
-                $match = array_filter($answers, function ($answer) use ($frml) {
-                    return $answer['field_id'] == $frml['field_id'] && $answer['answer'] == $frml['expected_value'];
-                });
-                if (isset($match[0])) $matches[] = $match[0];
-            }
-            echo json_encode([$formula, $matches, count($formula['formula']), count($matches)]) . '<br><br>';
+    // show extracted formula: echo json_encode($formulas);
+    global $wpdb;
+    foreach ($formulas as $rule) {
+        $formula_to_query = "
+            SELECT
+                ID
+            FROM {$wpdb->prefix}users
+            WHERE %d
+        ";
+        $logic = $rule['logic'];
+        foreach ($rule['formula'] as $frml) {
+            $field_id = $frml['field_id'];
+            $expected_value = $frml['expected_value'];
+            $formula_to_query .= "
+                {$logic} ID IN
+                (
+                    SELECT
+                        {$wpdb->prefix}frm_items.user_id
+                    FROM {$wpdb->prefix}frm_items
+                    RIGHT JOIN {$wpdb->prefix}frm_item_metas ON {$wpdb->prefix}frm_items.id = {$wpdb->prefix}frm_item_metas.item_id
+                    WHERE {$wpdb->prefix}frm_item_metas.field_id = {$field_id} AND {$wpdb->prefix}frm_item_metas.meta_value = '{$expected_value}'
+                )                
+            ";
         }
-        update_user_meta((int)$user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META, json_encode($list));
-    }
 
-    // echo json_encode($user_answers) . '<br><br>';
-    // foreach ($user_answers as $user_id => $answers) echo json_encode([$user_id, $answers]) . '<br>';
+        foreach ($wpdb->get_results($wpdb->prepare($formula_to_query, 'AND' === $logic)) as $user) {
+            $user_meta = service_eligibility_analyzer_user_meta($user->ID, null);
+
+            $service = (object)[
+                'name' => $rule['service_name'],
+                'link' => $rule['service_link']
+            ];
+
+            $is_eligible = $rule['is_eligible'];
+            $is_eligible = strtolower($is_eligible);
+            $is_eligible = trim($is_eligible);
+            $is_eligible = str_replace(' ', '_', $is_eligible);
+
+            if (!in_array($service, $user_meta->$is_eligible)) $user_meta->$is_eligible[] = $service;
+            service_eligibility_analyzer_user_meta($user->ID, $user_meta);
+            // show calculation result per user: echo json_encode([$user->ID, $user_meta]) . '<br>';
+        }
+        // show applied rule per row for users above: echo json_encode($rule) . '<br><br>';
+    }
+}
+
+function service_eligibility_analyzer_user_meta ($user_id, $new_value = null) {
+    if (null === $new_value) {
+        $user_meta = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META, true);
+        $user_meta =  '' === $user_meta ? (object) ['eligible' => [], 'not_eligible' => []] : json_decode($user_meta);
+        return $user_meta;
+    } else return update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META, json_encode($new_value));
 }
