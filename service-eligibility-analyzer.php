@@ -31,20 +31,36 @@ add_shortcode('service-eligibility-analyzer', function ($atts) {
     $atts = shortcode_atts(['user-id' => get_current_user_id()], $atts);
     $user_meta = service_eligibility_analyzer_user_meta($atts['user-id'], null);
 
-    $result = 'Eligible:';
     $eligible = array_map(function ($service) {
         return "<li><a href='{$service->link}'>{$service->name}</a></li>";
     }, $user_meta->eligible);
     $eligible = implode('', $eligible);
-    $result .= "<ul>{$eligible}</ul>";
-    $result .= '<p>Not Eligible:</p>';
+
     $not_eligible = array_map(function ($service) {
         return "<li><a href='{$service->link}'>{$service->name}</a></li>";
     }, $user_meta->not_eligible);
     $not_eligible = implode('', $not_eligible);
-    $result .= "<ul>{$not_eligible}</ul>";
 
-    return $result;
+    return "
+        <div id='mySidenav' class='sidenav'>
+            <a href='javascript:void(0)' class='closebtn' onclick='closeNav()'>×</a>
+            <ul class='sidenav-menu'>
+                <li>
+                    <a href='#' class='has-submenu'>Eligible Services</a>
+                    <ul class='sidenav-submenu'>
+                        {$eligible}
+                    </ul>
+                </li>
+                <li>
+                    <a href='#' class='has-submenu'>Non-Eligible Services</a>
+                    <ul class='sidenav-submenu'>
+                        {$not_eligible}
+                    </ul>
+                </li>
+            </ul>
+        </div>
+        <i class='fa fa-bars' onclick='openNav()' style='font-size:3rem;color:white;float:right;cursor: pointer;'></i>
+    ";
 });
 
 add_action('admin_menu', function () {
@@ -189,7 +205,8 @@ add_action('frm_after_update_entry', function ($entry_id, $form_id) {
     if (in_array($form_id, service_eligibility_analyzer_form_ids())) service_eligibility_analyzer_analyse();
 }, 10, 2);
 
-function service_eligibility_analyzer_form_ids() {
+function service_eligibility_analyzer_form_ids()
+{
     $rule_form_ids = array_map(function ($rule) {
         return array_map(function ($formula) {
             return $formula['form_id'];
