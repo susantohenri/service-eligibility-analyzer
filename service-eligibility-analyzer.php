@@ -103,66 +103,7 @@ add_action('admin_menu', function () {
 
 function service_eligibility_analyzer_analyse()
 {
-    if (!file_exists(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE)) return true;
-    $rows = [];
-    if (($open = fopen(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE, 'r')) !== FALSE) {
-        while (($data = fgetcsv($open, 100000, ",")) !== FALSE) $rows[] = $data;
-        fclose($open);
-    }
-
-    $thead = $rows[0];
-    unset($rows[0]);
-    $tbody = array_values($rows);
-
-    $list_col_num = array_search('List', $thead);
-    $label_col_num = array_search('Label', $thead);
-    $link_col_num = array_search('Link', $thead);
-    $logic_col_num = array_search('Logic', $thead);
-    $forms_and_fields = [];
-    $formulas = [];
-
-    // scan header
-    $form_field_col_num = $logic_col_num;
-    while (isset($thead[$form_field_col_num + 1])) {
-        $form_field_col_num++;
-        $cell_value = $thead[$form_field_col_num];
-        $cell_value = explode(',', $cell_value);
-        $forms_and_fields[] = [
-            'col_num' => $form_field_col_num,
-            'form_id' => (int) str_replace('Form ID ', '', $cell_value[0]),
-            'field_id' => (int) str_replace('Field ', '', $cell_value[1])
-        ];
-    }
-
-    // scan body
-    foreach ($tbody as $row_num => $row) {
-        $is_eligible = $row[$list_col_num];
-        $service_name = $row[$label_col_num];
-        $service_link = $row[$link_col_num];
-        $logic = $row[$logic_col_num];
-        $formula = [];
-
-        foreach ($forms_and_fields as $cell) {
-            if (0 === strlen($row[$cell['col_num']])) continue;
-            $formula[] = [
-                'rule_col' => $cell['col_num'] + 1,
-                'form_id' => $cell['form_id'],
-                'field_id' => $cell['field_id'],
-                'expected_value' => $row[$cell['col_num']]
-            ];
-        }
-
-        $formulas[] = [
-            'rule_row' => $row_num + 2,
-            'service_name' => $service_name,
-            'service_link' => $service_link,
-            'is_eligible' => $is_eligible,
-            'logic' => $logic,
-            'formula' => $formula,
-        ];
-    }
-
-    // show extracted formula: echo json_encode($formulas);
+    $formulas = service_eligibility_analyzer_formula();
     global $wpdb;
     foreach ($formulas as $rule) {
         $formula_to_query = "
@@ -239,3 +180,86 @@ add_action('rest_api_init', function () {
         }
     ));
 });
+
+add_action('frm_after_create_entry', function ($entry_id, $form_id) {
+    if (in_array($form_id, service_eligibility_analyzer_form_ids())) service_eligibility_analyzer_analyse();
+}, 30, 2);
+
+add_action('frm_after_update_entry', function ($entry_id, $form_id) {
+    if (in_array($form_id, service_eligibility_analyzer_form_ids())) service_eligibility_analyzer_analyse();
+}, 10, 2);
+
+function service_eligibility_analyzer_form_ids() {
+    $rule_form_ids = array_map(function ($rule) {
+        return array_map(function ($formula) {
+            return $formula['form_id'];
+        }, $rule['formula']);
+    }, service_eligibility_analyzer_formula());
+    $distinct = [];
+    foreach ($rule_form_ids as $formula_form_ids) foreach ($formula_form_ids as $form_id) if (!in_array($form_id, $distinct)) $distinct[] = $form_id;
+    return $distinct;
+}
+
+function service_eligibility_analyzer_formula()
+{
+    if (!file_exists(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE)) return true;
+    $rows = [];
+    if (($open = fopen(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE, 'r')) !== FALSE) {
+        while (($data = fgetcsv($open, 100000, ",")) !== FALSE) $rows[] = $data;
+        fclose($open);
+    }
+
+    $thead = $rows[0];
+    unset($rows[0]);
+    $tbody = array_values($rows);
+
+    $list_col_num = array_search('List', $thead);
+    $label_col_num = array_search('Label', $thead);
+    $link_col_num = array_search('Link', $thead);
+    $logic_col_num = array_search('Logic', $thead);
+    $forms_and_fields = [];
+    $formulas = [];
+
+    // scan header
+    $form_field_col_num = $logic_col_num;
+    while (isset($thead[$form_field_col_num + 1])) {
+        $form_field_col_num++;
+        $cell_value = $thead[$form_field_col_num];
+        $cell_value = explode(',', $cell_value);
+        $forms_and_fields[] = [
+            'col_num' => $form_field_col_num,
+            'form_id' => (int) str_replace('Form ID ', '', $cell_value[0]),
+            'field_id' => (int) str_replace('Field ', '', $cell_value[1])
+        ];
+    }
+
+    // scan body
+    foreach ($tbody as $row_num => $row) {
+        $is_eligible = $row[$list_col_num];
+        $service_name = $row[$label_col_num];
+        $service_link = $row[$link_col_num];
+        $logic = $row[$logic_col_num];
+        $formula = [];
+
+        foreach ($forms_and_fields as $cell) {
+            if (0 === strlen($row[$cell['col_num']])) continue;
+            $formula[] = [
+                'rule_col' => $cell['col_num'] + 1,
+                'form_id' => $cell['form_id'],
+                'field_id' => $cell['field_id'],
+                'expected_value' => $row[$cell['col_num']]
+            ];
+        }
+
+        $formulas[] = [
+            'rule_row' => $row_num + 2,
+            'service_name' => $service_name,
+            'service_link' => $service_link,
+            'is_eligible' => $is_eligible,
+            'logic' => $logic,
+            'formula' => $formula,
+        ];
+    }
+
+    return $formulas;
+}
