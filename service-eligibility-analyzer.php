@@ -29,7 +29,7 @@ define('SERVICE_ELIGIBILITY_ANALYZER_USER_META', 'service-eligibility-analyzer-e
 
 add_shortcode('service-eligibility-analyzer', function ($atts) {
     $atts = shortcode_atts(['user-id' => get_current_user_id()], $atts);
-    $user_meta = service_eligibility_analyzer_user_meta ($atts['user-id'], null);
+    $user_meta = service_eligibility_analyzer_user_meta($atts['user-id'], null);
 
     $result = 'Eligible:';
     $eligible = array_map(function ($service) {
@@ -69,9 +69,9 @@ add_action('admin_menu', function () {
                                         <span>Service Eligibility Analyzer Formula</span>
                                         <div>
                                             <?php if (file_exists(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE)) : ?>
-                                                <a class="button button-primary" href="<?= SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_ACTIVE ?>" style="text-decoration:none;">Export Current Formula</a>
+                                                <a class="button button-primary" href="<?= site_url() . '/wp-json/service-eligibility-analyzer/v1/download-latest' ?>" style="text-decoration:none;">Export Current Formula</a>
                                             <?php endif ?>
-                                            <a class="button button-primary" href="<?= SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_SAMPLE ?>" style="text-decoration:none;">Download Empty CSV Sample File</a>
+                                            <a class="button button-primary" href="<?= site_url() . '/wp-json/service-eligibility-analyzer/v1/download-sample' ?>" style="text-decoration:none;">Download Empty CSV Sample File</a>
                                         </div>
                                     </h2>
                                 </div>
@@ -208,10 +208,34 @@ function service_eligibility_analyzer_analyse()
     }
 }
 
-function service_eligibility_analyzer_user_meta ($user_id, $new_value = null) {
+function service_eligibility_analyzer_user_meta($user_id, $new_value = null)
+{
     if (null === $new_value) {
         $user_meta = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META, true);
         $user_meta =  '' === $user_meta ? (object) ['eligible' => [], 'not_eligible' => []] : json_decode($user_meta);
         return $user_meta;
     } else return update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META, json_encode($new_value));
 }
+
+add_action('rest_api_init', function () {
+    register_rest_route('service-eligibility-analyzer/v1', '/download-sample', array(
+        'methods' => 'GET',
+        'permission_callback' => '__return_true',
+        'callback' => function () {
+            $filename = basename(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_SAMPLE);
+            header("Content-Disposition: attachment; filename=\"{$filename}\"");
+            header('Content-Type: text/csv');
+            readfile(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_SAMPLE);
+        }
+    ));
+    register_rest_route('service-eligibility-analyzer/v1', '/download-latest', array(
+        'methods' => 'GET',
+        'permission_callback' => '__return_true',
+        'callback' => function () {
+            $filename = basename(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_ACTIVE);
+            header("Content-Disposition: attachment; filename=\"{$filename}\"");
+            header('Content-Type: text/csv');
+            readfile(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_ACTIVE);
+        }
+    ));
+});
