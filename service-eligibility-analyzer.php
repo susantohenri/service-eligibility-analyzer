@@ -121,6 +121,7 @@ function service_eligibility_analyzer_analyse()
 {
     $formulas = service_eligibility_analyzer_formula();
     global $wpdb;
+    $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}usermeta WHERE meta_key = %s", SERVICE_ELIGIBILITY_ANALYZER_USER_META));
     foreach ($formulas as $rule) {
         $formula_to_query = "
             SELECT
