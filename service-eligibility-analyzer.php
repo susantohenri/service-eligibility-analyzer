@@ -138,11 +138,11 @@ function service_eligibility_analyzer_analyse()
     foreach ($users as $user) {
         $user_id = $user->user_id;
         $answers = explode(',', $user->answers);
-        $user_meta = ['eligible' => [], 'not-eligible' => []];
+        $user_meta = ['eligible' => [], 'not_eligible' => []];
 
         foreach ($rules as $rule) {
             $logic = strtolower($rule['logic']);
-            $is_eligible = str_replace(' ', '-', trim(strtolower($rule['is_eligible'])));
+            $is_eligible = str_replace(' ', '_', trim(strtolower($rule['is_eligible'])));
             $service = (object)[
                 'name' => $rule['service_name'],
                 'link' => $rule['service_link'],
