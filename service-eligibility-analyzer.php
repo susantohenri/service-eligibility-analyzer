@@ -119,50 +119,45 @@ add_action('admin_menu', function () {
 
 function service_eligibility_analyzer_analyse()
 {
-    $formulas = service_eligibility_analyzer_formula();
+    $rules = service_eligibility_analyzer_formula();
+    $fields = service_eligibility_analyzer_field_ids($rules);
+    $fields = implode(',', $fields);
     global $wpdb;
-    $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}usermeta WHERE meta_key = %s", SERVICE_ELIGIBILITY_ANALYZER_USER_META));
-    foreach ($formulas as $rule) {
-        $formula_to_query = "
-            SELECT
-                ID
-            FROM {$wpdb->prefix}users
-            WHERE %d
-        ";
-        $logic = $rule['logic'];
-        foreach ($rule['formula'] as $frml) {
-            $field_id = $frml['field_id'];
-            $expected_value = $frml['expected_value'];
-            $formula_to_query .= "
-                {$logic} ID IN
-                (
-                    SELECT
-                        {$wpdb->prefix}frm_items.user_id
-                    FROM {$wpdb->prefix}frm_items
-                    RIGHT JOIN {$wpdb->prefix}frm_item_metas ON {$wpdb->prefix}frm_items.id = {$wpdb->prefix}frm_item_metas.item_id
-                    WHERE {$wpdb->prefix}frm_item_metas.field_id = {$field_id} AND {$wpdb->prefix}frm_item_metas.meta_value = '{$expected_value}'
-                )                
-            ";
-        }
 
-        foreach ($wpdb->get_results($wpdb->prepare($formula_to_query, 'AND' === $logic)) as $user) {
-            $user_meta = service_eligibility_analyzer_user_meta($user->ID, null);
+    $collect_users_answer = $wpdb->prepare("
+        SELECT
+            {$wpdb->prefix}frm_items.user_id
+            , GROUP_CONCAT(CONCAT({$wpdb->prefix}frm_item_metas.field_id, ':', {$wpdb->prefix}frm_item_metas.meta_value)) answers
+        FROM {$wpdb->prefix}frm_item_metas
+        LEFT JOIN {$wpdb->prefix}frm_items ON {$wpdb->prefix}frm_items.id = {$wpdb->prefix}frm_item_metas.item_id
+        WHERE %d AND {$wpdb->prefix}frm_item_metas.field_id IN ($fields)
+        GROUP BY {$wpdb->prefix}frm_items.user_id
+    ", true);
 
+    $users = $wpdb->get_results($collect_users_answer);
+    foreach ($users as $user) {
+        $user_id = $user->user_id;
+        $answers = explode(',', $user->answers);
+        $user_meta = ['eligible' => [], 'not-eligible' => []];
+
+        foreach ($rules as $rule) {
+            $logic = strtolower($rule['logic']);
+            $is_eligible = str_replace(' ', '-', trim(strtolower($rule['is_eligible'])));
             $service = (object)[
                 'name' => $rule['service_name'],
-                'link' => $rule['service_link']
+                'link' => $rule['service_link'],
+                // 'rule_num' => $rule['rule_row']
             ];
-
-            $is_eligible = $rule['is_eligible'];
-            $is_eligible = strtolower($is_eligible);
-            $is_eligible = trim($is_eligible);
-            $is_eligible = str_replace(' ', '_', $is_eligible);
-
-            if (!in_array($service, $user_meta->$is_eligible)) $user_meta->$is_eligible[] = $service;
-            service_eligibility_analyzer_user_meta($user->ID, $user_meta);
-            // show calculation result per user: echo json_encode([$user->ID, $user_meta]) . '<br>';
+            $rule_match = null;
+            foreach ($rule['formula'] as $formula) {
+                $is_match = in_array($formula['field_id'] . ':' . $formula['expected_value'], $answers);
+                if (is_null($rule_match)) $rule_match = $is_match;
+                else if ('and' === $logic) $rule_match = $rule_match && $is_match;
+                else if ('or' === $logic) $rule_match = $rule_match || $is_match;
+            }
+            if ($rule_match && !in_array($service, $user_meta[$is_eligible])) $user_meta[$is_eligible][] = $service;
         }
-        // show applied rule per row for users above: echo json_encode($rule) . '<br><br>';
+        service_eligibility_analyzer_user_meta($user_id, $user_meta);
     }
 }
 
@@ -218,6 +213,18 @@ function service_eligibility_analyzer_form_ids()
     return $distinct;
 }
 
+function service_eligibility_analyzer_field_ids($formulas = null)
+{
+    $rule_field_ids = array_map(function ($rule) {
+        return array_map(function ($formula) {
+            return $formula['field_id'];
+        }, $rule['formula']);
+    }, is_null($formulas) ? service_eligibility_analyzer_formula() : $formulas);
+    $distinct = [];
+    foreach ($rule_field_ids as $formula_field_ids) foreach ($formula_field_ids as $field_id) if (!in_array($field_id, $distinct)) $distinct[] = $field_id;
+    return $distinct;
+}
+
 function service_eligibility_analyzer_formula()
 {
     if (!file_exists(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE)) return true;
@@ -270,7 +277,7 @@ function service_eligibility_analyzer_formula()
         }
 
         $formulas[] = [
-            'rule_row' => $row_num + 2,
+            'rule_row' => $row_num + 1,
             'service_name' => $service_name,
             'service_link' => $service_link,
             'is_eligible' => $is_eligible,
