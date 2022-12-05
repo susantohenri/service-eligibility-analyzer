@@ -137,6 +137,9 @@ add_action('admin_menu', function () {
                                         <ol>
                                             <li>not<?= SERVICE_ELIGIBILITY_SEPARATOR ?>1120</li>
                                             <li>greater-than<?= SERVICE_ELIGIBILITY_SEPARATOR ?>1120</li>
+                                            <li>greater-than-equals<?= SERVICE_ELIGIBILITY_SEPARATOR ?>1120</li>
+                                            <li>less-than<?= SERVICE_ELIGIBILITY_SEPARATOR ?>1065</li>
+                                            <li>less-than-equals<?= SERVICE_ELIGIBILITY_SEPARATOR ?>1065</li>
                                             <li>emtpy<?= SERVICE_ELIGIBILITY_SEPARATOR ?></li>
                                             <li>not-empty<?= SERVICE_ELIGIBILITY_SEPARATOR ?></li>
                                             <li>in<?= SERVICE_ELIGIBILITY_SEPARATOR ?>1120,1120s,1120-A</li>
@@ -187,7 +190,45 @@ function service_eligibility_analyzer_analyse()
             ];
             $rule_match = null;
             foreach ($rule['formula'] as $formula) {
-                $is_match = in_array($formula['field_id'] . ':' . $formula['expected_value'], $answers);
+
+                $formula_field_id = $formula['field_id'];
+                $formula_expected_value = $formula['expected_value'];
+                $answer = array_values(array_filter($answers, function ($ans) use ($formula_field_id) {
+                    return -1 < strpos($ans, "{$formula_field_id}:");
+                }));
+                if (!isset($answer[0])) continue;
+                $answer = $answer[0];
+                $answer = explode(':', $answer);
+                $answer = $answer[1];
+
+                $is_match = false;
+                switch (substr_count($formula_expected_value, SERVICE_ELIGIBILITY_SEPARATOR)) {
+                    case 0:
+                        $is_match = service_eligibility_analyzer_keyword_match('equals', $answer, $formula_expected_value);
+                        break;
+                    case 1:
+                        $keyword = explode(SERVICE_ELIGIBILITY_SEPARATOR, $formula_expected_value);
+                        $keyword = $keyword[0];
+                        $is_match = service_eligibility_analyzer_keyword_match($keyword, $answer, $formula_expected_value);
+                        break;
+                    default:
+                        $keyword_and_expectations = explode(SERVICE_ELIGIBILITY_SEPARATOR, $formula_expected_value);
+                        foreach ($keyword_and_expectations as $index => $keyword_or_expectation) {
+                            if (0 === $index % 2) continue;
+                            else $is_match = $is_match && service_eligibility_analyzer_keyword_match($keyword_or_expectation, $answer, $formula_expected_value);
+                        }
+                        break;
+                }
+
+                echo json_encode([
+                    $user->user_id
+                    , $formula['field_id']
+                    , $formula['expected_value']
+                    , $answer
+                    , substr_count($formula_expected_value, SERVICE_ELIGIBILITY_SEPARATOR)
+                    , $is_match
+                ]) . '<br>';
+
                 if (is_null($rule_match)) $rule_match = $is_match;
                 else if ('and' === $logic) $rule_match = $rule_match && $is_match;
                 else if ('or' === $logic) $rule_match = $rule_match || $is_match;
@@ -324,4 +365,42 @@ function service_eligibility_analyzer_formula()
     }
 
     return $formulas;
+}
+
+function service_eligibility_analyzer_keyword_match($keyword, $answer, $expected)
+{
+    $expected = explode(SERVICE_ELIGIBILITY_SEPARATOR, $expected);
+    $expected = isset($expected[1]) ? $expected[1] : $expected[0];
+    switch ($keyword) {
+        case 'equals':
+            return "{$answer}" === "{$expected}";
+            break;
+        case 'not':
+            return "{$answer}" !== "{$expected}";
+            break;
+        case 'greater-than':
+            return (int) $answer > (int) $expected;
+            break;
+        case 'greater-than-equals':
+            return (int) $answer >= (int) $expected;
+            break;
+        case 'less-than':
+            return (int) $answer < (int) $expected;
+            break;
+        case 'less-than-equals':
+            return (int) $answer <= (int) $expected;
+            break;
+        case 'empty':
+            return "{$answer}" === "";
+            break;
+        case 'not-empty':
+            return "{$answer}" !== "";
+            break;
+        case 'in':
+            return in_array("{$answer}", explode(',', $expected));
+            break;
+        case 'not-in':
+            return !in_array("{$answer}", explode(',', $expected));
+            break;
+    }
 }
