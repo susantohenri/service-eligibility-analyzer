@@ -26,6 +26,7 @@ define('SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE', plugin_dir_path(__FILE__) . 'ser
 define('SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_SUBMIT', 'service-eligibility-analyzer-formula-submit');
 define('SERVICE_ELIGIBILITY_ANALYZER_LATEST_CSV_OPTION', 'service-eligibility-analyzer-last-uploaded-csv');
 define('SERVICE_ELIGIBILITY_ANALYZER_USER_META', 'service-eligibility-analyzer-eligibility-list');
+define('SERVICE_ELIGIBILITY_SEPARATOR', '|');
 
 add_shortcode('service-eligibility-analyzer', function ($atts) {
     $atts = shortcode_atts(['user-id' => get_current_user_id()], $atts);
@@ -40,6 +41,22 @@ add_shortcode('service-eligibility-analyzer', function ($atts) {
         return "<li><a href='{$service->link}'>{$service->name}</a></li>";
     }, $user_meta->not_eligible);
     $not_eligible = implode('', $not_eligible);
+
+    /* TESTING LINES BEGIN *
+    global $wpdb;
+    $fields = service_eligibility_analyzer_field_ids();
+    $fields = implode(', ', $fields);
+    $answers = $wpdb->prepare("
+        SELECT
+            {$wpdb->prefix}frm_items.user_id
+            , GROUP_CONCAT(CONCAT({$wpdb->prefix}frm_item_metas.field_id, ':', {$wpdb->prefix}frm_item_metas.meta_value)) answers
+        FROM {$wpdb->prefix}frm_item_metas
+        LEFT JOIN {$wpdb->prefix}frm_items ON {$wpdb->prefix}frm_items.id = {$wpdb->prefix}frm_item_metas.item_id
+        WHERE %d AND {$wpdb->prefix}frm_item_metas.field_id IN ($fields) AND {$wpdb->prefix}frm_items.user_id = %d
+    ", true, $atts['user-id']);
+    $testing = $wpdb->get_results($answers);
+    echo json_encode($testing);
+    * TESTING LINES END */
 
     return "
         <div id='mySidenav' class='sidenav'>
@@ -105,6 +122,26 @@ add_action('admin_menu', function () {
                                             <input type="submit" name="save" class="button button-primary" value="Upload Selected CSV">
                                             <br class="clear">
                                         </p>
+                                    </form>
+                                </div>
+                            </div>
+                            <div id="dashboard_quick_press" class="postbox ">
+                                <div class="postbox-header">
+                                    <h2 class="hndle ui-sortable-handle">
+                                        <span>Custom Keyword Usage</span>
+                                    </h2>
+                                </div>
+                                <div class="inside">
+                                    <form>
+                                        Below are samples of formula value using custom keyword :
+                                        <ol>
+                                            <li>not<?= SERVICE_ELIGIBILITY_SEPARATOR ?>1120</li>
+                                            <li>greater-than<?= SERVICE_ELIGIBILITY_SEPARATOR ?>1120</li>
+                                            <li>emtpy<?= SERVICE_ELIGIBILITY_SEPARATOR ?></li>
+                                            <li>not-empty<?= SERVICE_ELIGIBILITY_SEPARATOR ?></li>
+                                            <li>in<?= SERVICE_ELIGIBILITY_SEPARATOR ?>1120,1120s,1120-A</li>
+                                            <li>in<?= SERVICE_ELIGIBILITY_SEPARATOR ?>1120,1120s<?= SERVICE_ELIGIBILITY_SEPARATOR ?>not<?= SERVICE_ELIGIBILITY_SEPARATOR ?>1120-A</li>
+                                        </ol>
                                     </form>
                                 </div>
                             </div>
