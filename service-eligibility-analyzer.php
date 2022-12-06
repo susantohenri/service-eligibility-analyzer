@@ -205,7 +205,7 @@ function service_eligibility_analyzer_analyse()
                 $answer = explode(':', $answer);
                 $answer = $answer[1];
 
-                $is_match = false;
+                $is_match = null;
                 switch (substr_count($formula_expected_value, SERVICE_ELIGIBILITY_SEPARATOR)) {
                     case 0:
                         $is_match = service_eligibility_analyzer_keyword_match('equals', $answer, $formula_expected_value);
@@ -216,10 +216,15 @@ function service_eligibility_analyzer_analyse()
                         $is_match = service_eligibility_analyzer_keyword_match($keyword, $answer, $formula_expected_value);
                         break;
                     default:
-                        $keyword_and_expectations = explode(SERVICE_ELIGIBILITY_SEPARATOR, $formula_expected_value);
-                        foreach ($keyword_and_expectations as $index => $keyword_or_expectation) {
-                            if (0 === $index % 2) continue;
-                            else $is_match = $is_match && service_eligibility_analyzer_keyword_match($keyword_or_expectation, $answer, $formula_expected_value);
+                        $keywords = [];
+                        $values = [];
+                        foreach (explode(SERVICE_ELIGIBILITY_SEPARATOR, $formula_expected_value) as $index => $combination) {
+                            if (0 === $index % 2) $keywords[] = $combination;
+                            else $values[] = $combination;
+                        }
+                        foreach ($keywords as $index => $keyword) {
+                            $expected = $values[$index];
+                            $is_match = is_null($is_match) ? service_eligibility_analyzer_keyword_match($keyword, $answer, $expected) : $is_match && service_eligibility_analyzer_keyword_match($keyword, $answer, $expected);
                         }
                         break;
                 }
