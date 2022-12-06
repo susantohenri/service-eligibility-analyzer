@@ -166,11 +166,15 @@ function service_eligibility_analyzer_analyse()
 
     $collect_users_answer = $wpdb->prepare("
         SELECT
-            {$wpdb->prefix}frm_items.user_id
-            , GROUP_CONCAT(CONCAT({$wpdb->prefix}frm_item_metas.field_id, ':', {$wpdb->prefix}frm_item_metas.meta_value)) answers
-        FROM {$wpdb->prefix}frm_item_metas
-        LEFT JOIN {$wpdb->prefix}frm_items ON {$wpdb->prefix}frm_items.id = {$wpdb->prefix}frm_item_metas.item_id
-        WHERE %d AND {$wpdb->prefix}frm_item_metas.field_id IN ($fields)
+            {$wpdb->prefix}frm_items.user_id,
+            GROUP_CONCAT(CONCAT({$wpdb->prefix}frm_fields.id, ':', IFNULL({$wpdb->prefix}frm_item_metas.meta_value, 'EMPTY'))) answers
+        FROM {$wpdb->prefix}frm_items
+            LEFT JOIN {$wpdb->prefix}frm_forms ON {$wpdb->prefix}frm_items.form_id = {$wpdb->prefix}frm_forms.id
+            LEFT JOIN {$wpdb->prefix}frm_fields ON {$wpdb->prefix}frm_fields.form_id = {$wpdb->prefix}frm_forms.id
+            LEFT JOIN {$wpdb->prefix}frm_item_metas
+                ON {$wpdb->prefix}frm_item_metas.item_id = {$wpdb->prefix}frm_items.id
+                AND {$wpdb->prefix}frm_item_metas.field_id = {$wpdb->prefix}frm_fields.id
+        WHERE %d AND {$wpdb->prefix}frm_fields.id IN($fields)
         GROUP BY {$wpdb->prefix}frm_items.user_id
     ", true);
 
@@ -219,15 +223,6 @@ function service_eligibility_analyzer_analyse()
                         }
                         break;
                 }
-
-                echo json_encode([
-                    $user->user_id
-                    , $formula['field_id']
-                    , $formula['expected_value']
-                    , $answer
-                    , substr_count($formula_expected_value, SERVICE_ELIGIBILITY_SEPARATOR)
-                    , $is_match
-                ]) . '<br>';
 
                 if (is_null($rule_match)) $rule_match = $is_match;
                 else if ('and' === $logic) $rule_match = $rule_match && $is_match;
@@ -391,10 +386,10 @@ function service_eligibility_analyzer_keyword_match($keyword, $answer, $expected
             return (int) $answer <= (int) $expected;
             break;
         case 'empty':
-            return "{$answer}" === "";
+            return "{$answer}" === "EMPTY";
             break;
         case 'not-empty':
-            return "{$answer}" !== "";
+            return "{$answer}" !== "EMPTY";
             break;
         case 'in':
             return in_array("{$answer}", explode(',', $expected));
