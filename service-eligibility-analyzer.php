@@ -392,10 +392,16 @@ function service_eligibility_analyzer_keyword_match($keyword, $answer, $expected
             return "{$answer}" !== "EMPTY";
             break;
         case 'in':
-            return in_array("{$answer}", explode(',', $expected));
+            $expected = array_map(function ($word) {
+                return trim($word);
+            }, explode(',', $expected));
+            return in_array("{$answer}", $expected);
             break;
         case 'not-in':
-            return !in_array("{$answer}", explode(',', $expected));
+            $expected = array_map(function ($word) {
+                return trim($word);
+            }, explode(',', $expected));
+            return !in_array("{$answer}", $expected);
             break;
     }
 }
