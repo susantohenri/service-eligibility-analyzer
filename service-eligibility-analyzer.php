@@ -30,54 +30,17 @@ define('SERVICE_ELIGIBILITY_SEPARATOR', '|');
 
 add_shortcode('service-eligibility-analyzer', function ($atts) {
     $atts = shortcode_atts(['user-id' => get_current_user_id()], $atts);
-    $user_meta = service_eligibility_analyzer_user_meta($atts['user-id'], null);
-
-    $eligible = array_map(function ($service) {
-        return "<li><a href='{$service->link}'>{$service->name}</a></li>";
-    }, $user_meta->eligible);
-    $eligible = implode('', $eligible);
-
-    $not_eligible = array_map(function ($service) {
-        return "<li><a href='{$service->link}'>{$service->name}</a></li>";
-    }, $user_meta->not_eligible);
-    $not_eligible = implode('', $not_eligible);
-
-    /* TESTING LINES BEGIN *
-    global $wpdb;
-    $fields = service_eligibility_analyzer_field_ids();
-    $fields = implode(', ', $fields);
-    $answers = $wpdb->prepare("
-        SELECT
-            {$wpdb->prefix}frm_items.user_id
-            , GROUP_CONCAT(CONCAT({$wpdb->prefix}frm_item_metas.field_id, ':', {$wpdb->prefix}frm_item_metas.meta_value)) answers
-        FROM {$wpdb->prefix}frm_item_metas
-        LEFT JOIN {$wpdb->prefix}frm_items ON {$wpdb->prefix}frm_items.id = {$wpdb->prefix}frm_item_metas.item_id
-        WHERE %d AND {$wpdb->prefix}frm_item_metas.field_id IN ($fields) AND {$wpdb->prefix}frm_items.user_id = %d
-    ", true, $atts['user-id']);
-    $testing = $wpdb->get_results($answers);
-    echo json_encode($testing);
-    * TESTING LINES END */
-
-    return "
-        <div id='mySidenav' class='sidenav'>
-            <a href='javascript:void(0)' class='closebtn' onclick='closeNav()'>×</a>
-            <ul class='sidenav-menu'>
-                <li>
-                    <a href='#' class='has-submenu'>Eligible Services</a>
-                    <ul class='sidenav-submenu'>
-                        {$eligible}
-                    </ul>
-                </li>
-                <li>
-                    <a href='#' class='has-submenu'>Non-Eligible Services</a>
-                    <ul class='sidenav-submenu'>
-                        {$not_eligible}
-                    </ul>
-                </li>
-            </ul>
-        </div>
-        <i class='fa fa-bars' onclick='openNav()' style='font-size:3rem;color:white;float:right;cursor: pointer;'></i>
-    ";
+    wp_register_script('service-eligibility-analyzer', plugin_dir_url(__FILE__) . 'service-eligibility-analyzer.js', array('jquery'));
+    wp_enqueue_script('service-eligibility-analyzer');
+    wp_localize_script(
+        'service-eligibility-analyzer',
+        'service_eligibility_analyzer',
+        array(
+            'eligibility_list_url' => site_url('wp-json/service-eligibility-analyzer/v1/list?user-id=' . $atts['user-id'] . '&cache-breaker=' . time()),
+            'eligibility_list_update_url' => site_url('wp-json/service-eligibility-analyzer/v1/update')
+        )
+    );
+    return "<div class='service-eligibility-analyzer'>imhere</div>";
 });
 
 add_action('admin_menu', function () {
@@ -267,6 +230,17 @@ add_action('rest_api_init', function () {
             header("Content-Disposition: attachment; filename=\"{$filename}\"");
             header('Content-Type: text/csv');
             readfile(SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_ACTIVE);
+        }
+    ));
+    register_rest_route('service-eligibility-analyzer/v1', '/list', array(
+        'methods' => 'GET',
+        'permission_callback' => '__return_true',
+        'callback' => function () {
+            return [
+                'shortlist' => [],
+                'eligible' => [],
+                'not-eligible' => [],
+            ];
         }
     ));
 });
