@@ -25,7 +25,9 @@ define('SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_ACTIVE', plugin_dir_url(__FILE__) 
 define('SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE', plugin_dir_path(__FILE__) . 'service-eligibility-analyzer-formula-active.csv');
 define('SERVICE_ELIGIBILITY_ANALYZER_CSV_FILE_SUBMIT', 'service-eligibility-analyzer-formula-submit');
 define('SERVICE_ELIGIBILITY_ANALYZER_LATEST_CSV_OPTION', 'service-eligibility-analyzer-last-uploaded-csv');
-define('SERVICE_ELIGIBILITY_ANALYZER_USER_META', 'service-eligibility-analyzer-eligibility-list');
+define('SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST', 'service-eligibility-analyzer-shortlist');
+define('SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE', 'service-eligibility-analyzer-eligible');
+define('SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE', 'service-eligibility-analyzer-noteligible');
 define('SERVICE_ELIGIBILITY_SEPARATOR', '|');
 
 add_shortcode('service-eligibility-analyzer', function ($atts) {
@@ -40,7 +42,21 @@ add_shortcode('service-eligibility-analyzer', function ($atts) {
             'eligibility_list_update_url' => site_url('wp-json/service-eligibility-analyzer/v1/update')
         )
     );
-    return "<div class='service-eligibility-analyzer'>imhere</div>";
+    return "
+        <div class='service-eligibility-analyzer'>
+            Shortlist
+            <ol class='service-eligibility-analyzer-shortlist'>
+            </ol>
+
+            Eligible
+            <ol class='service-eligibility-analyzer-eligible'>
+            </ol>
+
+            Not Eligible
+            <ol class='service-eligibility-analyzer-not-eligible'>
+            </ol>
+        </div>
+    ";
 });
 
 add_action('admin_menu', function () {
@@ -145,7 +161,9 @@ function service_eligibility_analyzer_analyse()
     foreach ($users as $user) {
         $user_id = $user->user_id;
         $answers = explode(',', $user->answers);
-        $user_meta = ['eligible' => [], 'not_eligible' => []];
+        $user_meta_shortlist = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST, false);
+        $user_meta_eligible = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE, false);
+        $user_meta_noteligible = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE, false);
 
         foreach ($rules as $rule) {
             $logic = strtolower($rule['logic']);
@@ -196,19 +214,22 @@ function service_eligibility_analyzer_analyse()
                 else if ('and' === $logic) $rule_match = $rule_match && $is_match;
                 else if ('or' === $logic) $rule_match = $rule_match || $is_match;
             }
-            if ($rule_match && !in_array($service, $user_meta[$is_eligible])) $user_meta[$is_eligible][] = $service;
+            if ($rule_match) {
+                if ('eligible' === $is_eligible && !in_array($service, $user_meta_eligible)) {
+                    $user_meta_eligible[] = $service;
+                }
+                if ('not_eligible' === $is_eligible && !in_array($service, $user_meta_noteligible)) {
+                    $user_meta_noteligible[] = $service;
+                }
+            }
         }
-        service_eligibility_analyzer_user_meta($user_id, $user_meta);
+        $user_meta_shortlist = array_values(array_filter($user_meta_shortlist, function ($shortlist) use ($user_meta_eligible) {
+            return in_array($shortlist, $user_meta_eligible);
+        }));
+        update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST, $user_meta_shortlist);
+        update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE, $user_meta_eligible);
+        update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE, $user_meta_noteligible);
     }
-}
-
-function service_eligibility_analyzer_user_meta($user_id, $new_value = null)
-{
-    if (null === $new_value) {
-        $user_meta = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META, true);
-        $user_meta =  '' === $user_meta ? (object) ['eligible' => [], 'not_eligible' => []] : json_decode($user_meta);
-        return $user_meta;
-    } else return update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META, json_encode($new_value));
 }
 
 add_action('rest_api_init', function () {
@@ -236,10 +257,11 @@ add_action('rest_api_init', function () {
         'methods' => 'GET',
         'permission_callback' => '__return_true',
         'callback' => function () {
+            $user_id = $_GET['user-id'];
             return [
-                'shortlist' => [],
-                'eligible' => [],
-                'not-eligible' => [],
+                'shortlist' => get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST),
+                'eligible' => get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE),
+                'not-eligible' => get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE),
             ];
         }
     ));
