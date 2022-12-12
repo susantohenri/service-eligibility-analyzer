@@ -38,7 +38,8 @@ add_shortcode('service-eligibility-analyzer', function ($atts) {
         'service-eligibility-analyzer',
         'service_eligibility_analyzer',
         array(
-            'eligibility_list_url' => site_url('wp-json/service-eligibility-analyzer/v1/list?user-id=' . $atts['user-id'] . '&cache-breaker=' . time()),
+            'shortcode_user_id' => $atts['user-id'],
+            'eligibility_list_url' => site_url('wp-json/service-eligibility-analyzer/v1/list?&cache-breaker=' . time()),
             'eligibility_list_update_url' => site_url('wp-json/service-eligibility-analyzer/v1/update')
         )
     );
@@ -263,6 +264,28 @@ add_action('rest_api_init', function () {
                 'eligible' => get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE),
                 'not-eligible' => get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE),
             ];
+        }
+    ));
+    register_rest_route('service-eligibility-analyzer/v1', '/update', array(
+        'methods' => 'POST',
+        'permission_callback' => '__return_true',
+        'callback' => function () {
+            $user_id = $_POST['user_id'];
+            $service = ['name' => $_POST['service_name'], 'link' => $_POST['service_link']];
+
+            $user_meta_shortlist = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST);
+            $user_meta_eligible = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE);
+
+            $search_index_shortlist = array_search($service, $user_meta_shortlist);
+            $search_index_eligible = array_search($service, $user_meta_eligible);
+
+            if (-1 < $search_index_shortlist) unset($user_meta_shortlist[$search_index_shortlist]);
+            if (-1 < $search_index_eligible) unset($user_meta_eligible[$search_index_eligible]);
+
+            update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST, array_values($user_meta_shortlist));
+            update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE, array_values($user_meta_eligible));
+
+            return true;
         }
     ));
 });
