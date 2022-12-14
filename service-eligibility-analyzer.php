@@ -224,8 +224,20 @@ function service_eligibility_analyzer_analyse()
                 }
             }
         }
-        $user_meta_shortlist = array_values(array_filter($user_meta_shortlist, function ($shortlist) use ($user_meta_eligible) {
-            return in_array($shortlist, $user_meta_eligible);
+        // if there is item in shortlist which no more eligible, remove it
+        $user_meta_eligible_json = array_map(function ($service) {
+            return json_encode($service);
+        }, $user_meta_eligible);
+        $user_meta_shortlist = array_values(array_filter($user_meta_shortlist, function ($service) use ($user_meta_eligible_json) {
+            return in_array(json_encode($service), $user_meta_eligible_json);
+        }));
+
+        // if there is item in eligible list which already in shortlist, remove it
+        $user_meta_shortlist_json = array_map(function ($service) {
+            return json_encode($service);
+        }, $user_meta_shortlist);
+        $user_meta_eligible = array_values(array_filter($user_meta_eligible, function ($service) use ($user_meta_shortlist_json) {
+            return !in_array(json_encode($service), $user_meta_shortlist_json);
         }));
 
         service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST, $user_meta_shortlist);
@@ -313,15 +325,13 @@ add_action('frm_after_update_entry', function ($entry_id, $form_id) {
     if (in_array($form_id, service_eligibility_analyzer_form_ids())) service_eligibility_analyzer_analyse();
 }, 10, 2);
 
-function service_eligibility_analyzer_user_meta ($user_id, $meta_key, $meta_value = null) {
+function service_eligibility_analyzer_user_meta($user_id, $meta_key, $meta_value = null)
+{
     $user_id = (int) $user_id;
     if (is_null($meta_value)) {
         $meta_value = get_user_meta($user_id, $meta_key);
         return isset($meta_value[0]) ? $meta_value[0] : [];
-    } else {
-        // $meta_value = isset($meta_value[0]) ? $meta_value[0] :[];
-        return update_user_meta($user_id, $meta_key, $meta_value);
-    }
+    } else return update_user_meta($user_id, $meta_key, $meta_value);
 }
 
 function service_eligibility_analyzer_form_ids()
