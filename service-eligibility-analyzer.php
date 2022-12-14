@@ -162,9 +162,9 @@ function service_eligibility_analyzer_analyse()
     foreach ($users as $user) {
         $user_id = $user->user_id;
         $answers = explode(',', $user->answers);
-        $user_meta_shortlist = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST, false);
-        $user_meta_eligible = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE, false);
-        $user_meta_noteligible = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE, false);
+        $user_meta_shortlist = service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST);
+        $user_meta_eligible = service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE);
+        $user_meta_noteligible = service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE);
 
         foreach ($rules as $rule) {
             $logic = strtolower($rule['logic']);
@@ -227,9 +227,10 @@ function service_eligibility_analyzer_analyse()
         $user_meta_shortlist = array_values(array_filter($user_meta_shortlist, function ($shortlist) use ($user_meta_eligible) {
             return in_array($shortlist, $user_meta_eligible);
         }));
-        update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST, $user_meta_shortlist);
-        update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE, $user_meta_eligible);
-        update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE, $user_meta_noteligible);
+
+        service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST, $user_meta_shortlist);
+        service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE, $user_meta_eligible);
+        service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE, $user_meta_noteligible);
     }
 }
 
@@ -260,9 +261,9 @@ add_action('rest_api_init', function () {
         'callback' => function () {
             $user_id = $_GET['user-id'];
             return [
-                'shortlist' => get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST),
-                'eligible' => get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE),
-                'not-eligible' => get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE),
+                'shortlist' => service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST),
+                'eligible' => service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE),
+                'not-eligible' => service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE),
             ];
         }
     ));
@@ -273,18 +274,32 @@ add_action('rest_api_init', function () {
             $user_id = $_POST['user_id'];
             $service = ['name' => $_POST['service_name'], 'link' => $_POST['service_link']];
 
-            $user_meta_shortlist = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST);
-            $user_meta_eligible = get_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE);
+            $user_meta_shortlist = service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST);
+            $user_meta_eligible = service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE);
 
-            $search_index_shortlist = array_search($service, $user_meta_shortlist);
-            $search_index_eligible = array_search($service, $user_meta_eligible);
+            $search_index_eligible = -1;
+            $eligible_matches = array_filter($user_meta_eligible, function ($eliglible_service) use ($service) {
+                return json_encode($eliglible_service) === json_encode($service);
+            });
+            foreach ($eligible_matches as $index => $value) $search_index_eligible = $index;
 
-            if (-1 < $search_index_shortlist) unset($user_meta_shortlist[$search_index_shortlist]);
-            if (-1 < $search_index_eligible) unset($user_meta_eligible[$search_index_eligible]);
+            $search_index_shortlist = -1;
+            $shortlist_matches = array_filter($user_meta_shortlist, function ($eliglible_service) use ($service) {
+                return json_encode($eliglible_service) === json_encode($service);
+            });
+            foreach ($shortlist_matches as $index => $value) $search_index_shortlist = $index;
 
-            update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST, array_values($user_meta_shortlist));
-            update_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE, array_values($user_meta_eligible));
+            if (-1 < $search_index_shortlist) {
+                unset($user_meta_shortlist[$search_index_shortlist]);
+                $user_meta_eligible[] = $service;
+            }
+            if (-1 < $search_index_eligible) {
+                unset($user_meta_eligible[$search_index_eligible]);
+                $user_meta_shortlist[] = $service;
+            }
 
+            service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST, array_values($user_meta_shortlist));
+            service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE, array_values($user_meta_eligible));
             return true;
         }
     ));
@@ -297,6 +312,17 @@ add_action('frm_after_create_entry', function ($entry_id, $form_id) {
 add_action('frm_after_update_entry', function ($entry_id, $form_id) {
     if (in_array($form_id, service_eligibility_analyzer_form_ids())) service_eligibility_analyzer_analyse();
 }, 10, 2);
+
+function service_eligibility_analyzer_user_meta ($user_id, $meta_key, $meta_value = null) {
+    $user_id = (int) $user_id;
+    if (is_null($meta_value)) {
+        $meta_value = get_user_meta($user_id, $meta_key);
+        return isset($meta_value[0]) ? $meta_value[0] : [];
+    } else {
+        // $meta_value = isset($meta_value[0]) ? $meta_value[0] :[];
+        return update_user_meta($user_id, $meta_key, $meta_value);
+    }
+}
 
 function service_eligibility_analyzer_form_ids()
 {
