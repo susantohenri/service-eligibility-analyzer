@@ -163,8 +163,8 @@ function service_eligibility_analyzer_analyse()
         $user_id = $user->user_id;
         $answers = explode(',', $user->answers);
         $user_meta_shortlist = service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_SHORTLIST);
-        $user_meta_eligible = service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE);
-        $user_meta_noteligible = service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE);
+        $user_meta_eligible = [];//service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_ELIGIBLE);
+        $user_meta_noteligible = [];//service_eligibility_analyzer_user_meta($user_id, SERVICE_ELIGIBILITY_ANALYZER_USER_META_NOTELIGIBLE);
 
         foreach ($rules as $rule) {
             $logic = strtolower($rule['logic']);
