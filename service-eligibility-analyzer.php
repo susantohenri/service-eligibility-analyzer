@@ -382,7 +382,7 @@ function service_eligibility_analyzer_formula()
     $form_field_col_num = $logic_col_num;
     global $wpdb;
     $field_form = [];
-    foreach ($wpdb->get_results($wpdb->prepare("SELECT id field_id, form_id FROM {$wpdb->prefix}frm_fields")) as $field_list) {
+    foreach ($wpdb->get_results($wpdb->prepare("SELECT id field_id, form_id FROM {$wpdb->prefix}frm_fields WHERE %d", TRUE)) as $field_list) {
         $field_form[$field_list->field_id] = (int) $field_list->form_id;
     }
     while (isset($thead[$form_field_col_num + 1])) {
